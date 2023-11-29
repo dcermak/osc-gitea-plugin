@@ -1,7 +1,9 @@
+import asyncio
+import os
 from urllib.parse import urlparse
 import xml.etree.ElementTree as ET
 import osc.commandline
-from osc.conf import get_config
+from osc.conf import get_config, oscerr
 from osc.core import (
     branch_pkg,
     makeurl,
@@ -10,19 +12,16 @@ from osc.core import (
     show_package_meta,
     show_scmsync,
 )
+from osc.store import get_store
 from py_gitea_opensuse_org.api.repository_api import RepositoryApi
 from py_gitea_opensuse_org.api_client import ApiClient
 from py_gitea_opensuse_org.exceptions import ApiException
-from py_gitea_opensuse_org.models.create_hook_option import CreateHookOption
 from py_gitea_opensuse_org.models.repository import Repository
 
 from osc_gitea_plugin.tea_config import Login, api_client_from_login, load_logins
 
 
 _API_URL = "https://api.opensuse.org/"
-
-# need to call this for osc's internal state being initialized
-get_config()
 
 
 async def fork_devel_package(
@@ -113,18 +112,32 @@ class GiteaForkCommand(osc.commandline.OscCommand):
     name = "fork"
 
     def init_arguments(self) -> None:
-        self.add_argument()
+        self.add_argument("--create-scmsync", action="store_true")
+
+    def run(self, args) -> None:
+        store = get_store(cwd := os.getcwd(), check=False)
+        if store.is_package:
+            pkg = store.package
+            # if this is a git package, we should add the remote here
+        else:
+            raise RuntimeError(f"{cwd} is not an osc package")
+
+        client, login = api_client_from_login(load_logins())
+        if not client:
+            raise RuntimeError(
+                "Could not get a API token from ~/.config/tea/config.yml"
+            )
+
+        loop = asyncio.get_event_loop()
+        try:
+            loop.run_until_complete(
+                fork_devel_package(
+                    client, login, pkg, create_scmsync=args.create_scmsync
+                )
+            )
+        finally:
+            loop.run_until_complete(client.close())
 
 
 def main() -> None:
-    import asyncio
-
-    client, login = api_client_from_login(load_logins())
-    if not client:
-        raise RuntimeError("Could not get a API token from ~/.config/tea/config.yml")
-
-    loop = asyncio.get_event_loop()
-    try:
-        loop.run_until_complete(fork_devel_package(client, login, "vagrant-libvirt"))
-    finally:
-        loop.run_until_complete(client.close())
+    pass
