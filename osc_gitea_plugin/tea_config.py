@@ -8,19 +8,30 @@ from py_gitea_opensuse_org.configuration import Configuration
 class Login(BaseModel):
     """Single login entry in :file:``tea/config.yml``."""
 
+    #: name/alias of this login (usually the hostname)
     name: str
+
+    #: url to the instance
     url: str
+
+    #: API token to talk to gitea
     token: str
+
+    #: username of this login
     user: str
 
 
-def load_logins() -> list[Login]:
+def load_logins(xdg_config_home: str | None = None) -> list[Login]:
     conf_file = os.path.join(
-        os.getenv("XDG_CONFIG_HOME", os.path.expanduser("~/.config")),
+        xdg_config_home
+        or os.getenv("XDG_CONFIG_HOME", os.path.expanduser("~/.config")),
         "tea",
         "config.yml",
     )
-    conf = safe_load(open(conf_file, "r", encoding="utf-8"))
+    try:
+        conf = safe_load(open(conf_file, "r", encoding="utf-8"))
+    except FileNotFoundError:
+        return []
     res = []
 
     if "logins" not in conf:
