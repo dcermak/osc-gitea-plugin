@@ -32,3 +32,17 @@ Feature: Fork a package
     Then stdout contains "Reusing existing fork"
     And I run "git remote get-url {context.gitea_user}"
     Then stdout contains "src.opensuse.org:{context.gitea_user}/trivy.git"
+
+  Scenario: Delete a forked package
+    When I set the working directory to "{context.tmpdir}/Virtualization:containers/trivy"
+    And I run osc "fork"
+    When I run osc "fork delete --yes"
+    Then stdout contains "{context.gitea_user}/trivy"
+
+  Scenario: Fork a package with scmsync
+    When I set the working directory to "{context.tmpdir}/Virtualization:containers/trivy"
+    And I run osc "fork --create-scmsync"
+    When I run "git remote -v"
+    Then stdout contains "{context.gitea_user}"
+    When I run osc "meta pkg home:{context.osc_user}:branches:Virtualization:containers trivy"
+    Then stdout contains "<scmsync>https://src.opensuse.org/{context.gitea_user}/trivy.git#factory</scmsync>"
