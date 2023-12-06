@@ -134,6 +134,17 @@ class GiteaForkCommand(osc.commandline.OscCommand):
     name = "fork"
 
     def init_arguments(self) -> None:
+        subparsers = self.parser.add_subparsers(dest="action")
+        delete_cmd = subparsers.add_parser(
+            "delete", help="Delete the fork of the checked out repository"
+        )
+        # delete_cmd.add_argument("repository", required=False, nargs=1, type=str, help="Repository fork to delete")
+        delete_cmd.add_argument(
+            "--yes",
+            action="store_true",
+            help="Don't ask for confirmation and delete immediately",
+        )
+
         self.add_argument(
             "--create-scmsync",
             action="store_true",
@@ -166,6 +177,23 @@ class GiteaForkCommand(osc.commandline.OscCommand):
             ["git", "remote", "add", login.user, clone_url], cwd=cwd
         )
 
+    async def delete_fork(
+        self, api_client: ApiClient, login: Login, pkg: str, no_confirm: bool
+    ) -> None:
+        repo_slug = f"{login.user}/{pkg}"
+        if not no_confirm:
+            print(
+                f"Confirm the deletion of {login.user}/{pkg} by typing its full name:",
+                end="",
+            )
+            if (inp := input()) != repo_slug:
+                raise ValueError(f"Invalid repo name {inp}")
+
+        try:
+            await RepositoryApi(api_client).repo_delete(login.user, pkg)
+            print(f"Removed {repo_slug}")
+        finally:
+            await api_client.close()
 
     def run(self, args) -> None:
         store = get_store(cwd := os.getcwd(), check=False)
@@ -185,9 +213,14 @@ class GiteaForkCommand(osc.commandline.OscCommand):
         loop = asyncio.get_event_loop()
 
         try:
+            if args.action is None:
                 loop.run_until_complete(
                     self.create_fork(client, login, pkg, args.create_scmsync, cwd)
                 )
+            elif args.action == "delete":
+                loop.run_until_complete(self.delete_fork(client, login, pkg, args.yes))
+            else:
+                assert False, f"got an invalid action {args.action}"
         finally:
             loop.run_until_complete(client.close())
 
