@@ -1,0 +1,150 @@
+---
+name: CI
+
+on:
+  push:
+    branches:
+      - "main"
+  pull_request:
+
+jobs:
+  format:
+    name: Ensure code is properly formatted
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+      - uses: actions/cache@v3
+        with:
+          path: ~/.cache/pypoetry/virtualenvs
+          key: poetry-${{ hashFiles('poetry.lock') }}
+
+      - run: |
+          pipx install poetry
+          poetry install
+          poetry run black --check --diff .
+
+  ci:
+    name: Run the behave tests
+    runs-on: "ubuntu-latest"
+    container: ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      # we're forking the same package in behave, so cannot run multiple tests
+      # at the same time!
+      max-parallel: 1
+      matrix:
+        image:
+          - "registry.opensuse.org/opensuse/tumbleweed-dnf:latest"
+          - "registry.fedoraproject.org/fedora:39"
+          - "registry.fedoraproject.org/fedora:38"
+
+    steps:
+      - name: install dependencies on Fedora
+        run: |
+          dnf -y upgrade --refresh
+          dnf -y install osc python3-pip python3-behave git "python3dist(pyyaml)" python3-devel gcc
+          mkdir -p /usr/lib/obs/service/
+          curl -o /usr/lib/obs/service/obs_scm_bridge https://raw.githubusercontent.com/openSUSE/obs-scm-bridge/main/obs_scm_bridge
+          chmod +x /usr/lib/obs/service/obs_scm_bridge
+          pip install py-gitea-opensuse-org
+        if: ${{ contains(matrix.image, 'fedora') }}
+
+      - name: install dependencies on openSUSE
+        run: |
+          dnf -y upgrade --refresh
+          dnf -y install osc python3-pip python3-behave git python3-PyYAML python3-devel gcc obs-scm-bridge
+          pip install --break-system-packages py-gitea-opensuse-org
+        if: ${{ contains(matrix.image, 'tumbleweed') }}
+
+      - uses: actions/checkout@v4
+
+      - name: install the plugin
+        run: |
+          mkdir -p /usr/lib/osc-plugins/
+          ln -s $(pwd)/osc_gitea_plugin/ /usr/lib/osc-plugins/
+          ln -s $(pwd)/osc_gitea_plugin/fork_command.py /usr/lib/osc-plugins/
+
+      - name: run the behave tests
+        run: behave
+        env:
+          OSC_USER: "defolos"
+          OSC_PASSWORD: ${{ secrets.OSC_PASSWORD }}
+          GITEA_SERVER_USER: "defolos"
+          GITEA_SERVER_TOKEN: ${{ secrets.GITEA_SERVER_TOKEN }}
+
+  # documentation:
+  #   name: Build the documentation
+  #   runs-on: ubuntu-latest
+
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: actions/setup-python@v4
+  #       with:
+  #         python-version: '3.x'
+  #     - uses: actions/cache@v3
+  #       with:
+  #         path: ~/.nox
+  #         key: nox-${{ hashFiles('poetry.lock') }}
+
+  #     - run: pip install --upgrade nox poetry nox-poetry
+
+  #     - run: nox -s doc
+
+  #     - name: upload the build directory
+  #       uses: actions/upload-artifact@v3
+  #       with:
+  #         name: build
+  #         path: ./build/html
+
+  # deploy:
+  #   name: deploy to the gh-pages branch
+  #   runs-on: ubuntu-latest
+  #   needs: documentation
+  #   if: github.ref == 'refs/heads/main'
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: actions/download-artifact@v3
+  #       with:
+  #         name: build
+  #         path: ./build
+
+  #     - run: touch ./build/.nojekyll
+
+  #     - name: deploy to github pages
+  #       uses: JamesIves/github-pages-deploy-action@v4
+  #       with:
+  #         branch: gh-pages
+  #         folder: build
+
+  # lint:
+  #   name: Lint the source code
+  #   runs-on: ubuntu-latest
+  #   needs: build
+
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: actions/setup-python@v4
+  #       with:
+  #         # FIXME: temporary fix to python 3.11 to avoid a:
+  #         # AttributeError: module 'pkgutil' has no attribute 'ImpImporter'. Did you mean: 'zipimporter'?
+  #         # when launching pylint with python 3.12
+  #         python-version: '3.11'
+
+  #     - uses: actions/cache@v3
+  #       with:
+  #         path: ~/.nox
+  #         key: nox-${{ hashFiles('poetry.lock') }}
+
+  #     - run: pip install --upgrade nox poetry nox-poetry
+
+  #     # grab the previously built wheel for checking with twine
+  #     - uses: actions/download-artifact@v3
+  #       with:
+  #         name: wheel
+  #         path: dist
+
+  #     - run: nox -s lint
