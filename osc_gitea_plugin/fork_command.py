@@ -1,27 +1,16 @@
-import asyncio
-import os
-import subprocess
-import xml.etree.ElementTree as ET
+import typing
 import osc.commandline
-from osc.core import (
-    branch_pkg,
-    makeurl,
-    metafile,
-    show_package_meta,
-)
-from osc.store import get_store
-from py_gitea_opensuse_org.api.repository_api import RepositoryApi
-from py_gitea_opensuse_org.api_client import ApiClient
-from py_gitea_opensuse_org.exceptions import ApiException
-from py_gitea_opensuse_org.models.repository import Repository
-from osc_gitea_plugin.common import API_URL, fetch_devel_pkg
 
-from osc_gitea_plugin.tea_config import Login, api_client_from_login, load_logins
+
+if typing.TYPE_CHECKING:
+    from py_gitea_opensuse_org.api_client import ApiClient
+    from osc_gitea_plugin.tea_config import Login
+    from py_gitea_opensuse_org.models.repository import Repository
 
 
 async def fork_devel_package(
-    api_client: ApiClient,
-    login: Login,
+    api_client: "ApiClient",
+    login: "Login",
     pkg_name: str,
     project_name: str = "openSUSE:Factory",
     create_scmsync: bool = True,
@@ -37,6 +26,19 @@ async def fork_devel_package(
     - str: the clone url of the forked repository
 
     """
+    import xml.etree.ElementTree as ET
+
+    from osc_gitea_plugin.common import API_URL, fetch_devel_pkg
+    from osc.core import (
+        branch_pkg,
+        makeurl,
+        metafile,
+        show_package_meta,
+    )
+
+    from py_gitea_opensuse_org.api.repository_api import RepositoryApi
+    from py_gitea_opensuse_org.exceptions import ApiException
+
     devel = fetch_devel_pkg(pkg_name, project_name)
 
     devel_pkg, devel_prj, org, gitea_pkg_name = (
@@ -56,7 +58,7 @@ async def fork_devel_package(
         if exc.status != 409:
             raise
 
-        def find_matching_repo(forks: list[Repository]) -> Repository | None:
+        def find_matching_repo(forks: list["Repository"]) -> "Repository | None":
             for fork in forks:
                 if fork.owner.login == login.user:
                     return fork
@@ -130,12 +132,14 @@ class GiteaForkCommand(osc.commandline.OscCommand):
 
     async def create_fork(
         self,
-        api_client: ApiClient,
-        login: Login,
+        api_client: "ApiClient",
+        login: "Login",
         pkg: str,
         create_scmsync: bool,
         cwd: str,
     ) -> None:
+        import subprocess
+
         try:
             created_fork, clone_url = await fork_devel_package(
                 api_client, login, pkg, create_scmsync=create_scmsync
@@ -155,8 +159,10 @@ class GiteaForkCommand(osc.commandline.OscCommand):
         )
 
     async def delete_fork(
-        self, api_client: ApiClient, login: Login, pkg: str, no_confirm: bool
+        self, api_client: "ApiClient", login: "Login", pkg: str, no_confirm: bool
     ) -> None:
+        from py_gitea_opensuse_org.api.repository_api import RepositoryApi
+
         repo_slug = f"{login.user}/{pkg}"
         if not no_confirm:
             print(
@@ -173,6 +179,11 @@ class GiteaForkCommand(osc.commandline.OscCommand):
             await api_client.close()
 
     def run(self, args) -> None:
+        import asyncio
+        import os
+        from osc.store import get_store
+        from osc_gitea_plugin.tea_config import api_client_from_login, load_logins
+
         store = get_store(cwd := os.getcwd(), check=False)
         if store.is_package:
             pkg = store.package
