@@ -67,6 +67,7 @@ jobs:
           mkdir -p /usr/lib/osc-plugins/
           ln -s $(pwd)/osc_gitea_plugin/ /usr/lib/osc-plugins/
           ln -s $(pwd)/osc_gitea_plugin/fork_command.py /usr/lib/osc-plugins/
+          ln -s $(pwd)/osc_gitea_plugin/clone_command.py /usr/lib/osc-plugins/
 
       - name: run the behave tests
         run: behave
